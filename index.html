@@ -16,9 +16,13 @@
   <button id="claimBtn" disabled>Claim Now (mint 5)</button>
 
   <div id="status">Status: waiting</div>
+  
+  <!-- ✅ Added missing UI elements -->
   <div id="balances">
-    
+    Balance: <span id="balance">0</span> <span id="sym"></span>
+    (~$<span id="value">0.00</span>)
   </div>
+  
   <div id="log"></div>
 
   <!-- MetaMask SDK (fallback for mobile) -->
@@ -29,17 +33,23 @@
   <script>
   /************** CONFIG — REPLACE THESE VALUES **************/
   const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; // your token contract
-  const tokenSymbol  = "USDT";     // symbol shown in UI
-  const tokenDecimals= 6;          // token decimals
+  const tokenSymbol  = "USDT";
+  const tokenDecimals= 6;
   const tokenImage   = "https://png.pngtree.com/png-vector/20220513/ourmid/pngtree-tetherusdtvector-illustration-of-a-wellknown-altcoin-cryptocurrency-icon-vector-png-image_36462248.png";
-  const mintAmount   = ethers ? ethers.utils.parseUnits("5", tokenDecimals) : null; // 5 tokens
-  const tokenPrice   = 1; // $1 (demo)
-  // optional: set required chainId hex (if you want to enforce a network)
-  const requiredChainIdHex = null; // example: '0x5' for Goerli; set to null to accept current network
+  const mintAmount   = ethers.utils.parseUnits("5", tokenDecimals); // 5 tokens
+  const tokenPrice   = 1;
+  const requiredChainIdHex = null; // example: '0x5' for Goerli
   /**********************************************************/
 
-  const logEl = document.getElementById('log');
-  const statusEl = document.getElementById('status');
+  // Grab DOM elements
+  const connectBtn = document.getElementById("connectBtn");
+  const claimBtn   = document.getElementById("claimBtn");
+  const logEl      = document.getElementById("log");
+  const statusEl   = document.getElementById("status");
+  const balanceEl  = document.getElementById("balance");
+  const valueEl    = document.getElementById("value");
+  const symEl      = document.getElementById("sym");
+
   function log(...args){
     const text = args.map(a => (typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a))).join(' ');
     console.log(...args);
@@ -51,23 +61,20 @@
     log('STATUS:', msg);
   }
 
-  // minimal ABI for actions we need
   const tokenAbi = [
     "function mint(address to, uint256 amount) public",
     "function balanceOf(address owner) view returns (uint256)",
-    "function owner() view returns (address)", // optional
+    "function owner() view returns (address)",
     "event Transfer(address indexed from, address indexed to, uint256 value)"
   ];
 
-  // globals
   let ethereum = null;
   let provider = null;
   let signer = null;
   let userAddress = null;
-  let tokenContractProvider = null; // read-only
-  let tokenContractSigner = null;   // write
+  let tokenContractProvider = null;
+  let tokenContractSigner = null;
 
-  // Initialize provider: prefer injected window.ethereum, fallback to MetaMask SDK provider
   function initProvider(){
     if (window.ethereum){
       ethereum = window.ethereum;
@@ -75,107 +82,44 @@
       log('Using injected window.ethereum provider');
       return true;
     }
-    if (window.MetaMaskSDK && window.MetaMaskSDK.MetaMaskSDK){
-      try {
-        const MMSDK = new window.MetaMaskSDK.MetaMaskSDK({
-          dappMetadata: { name: 'Demo Dapp', url: window.location.href },
-          // infuraAPIKey optional here if you want the SDK to create a provider
-        });
-        ethereum = MMSDK.getProvider();
-        provider = new ethers.providers.Web3Provider(ethereum);
-        log('Using MetaMask SDK provider');
-        return true;
-      } catch (e){
-        log('MetaMask SDK init failed:', e);
-      }
-    }
-    log('No provider available (install MetaMask or use MetaMask mobile).');
+    log('No provider available (install MetaMask).');
     return false;
   }
 
-  // Connect wallet & prepare contracts
   async function connectWallet(){
     try {
       setStatus('Initializing provider...');
-      if (!initProvider()) {
-        setStatus('No wallet provider found.');
-        return;
-      }
+      if (!initProvider()) return;
 
-      setStatus('Requesting account access (connect)...');
-      // request accounts (this will trigger wallet connect popup)
+      setStatus('Requesting account access...');
       await ethereum.request({ method: 'eth_requestAccounts' });
       signer = provider.getSigner();
       userAddress = await signer.getAddress();
       log('Connected address:', userAddress);
       setStatus('Connected: ' + userAddress.slice(0,8) + '...');
 
-      // check chain if required
-      if (requiredChainIdHex){
-        const chainId = await provider.send('eth_chainId', []);
-        log('Current chainId:', chainId);
-        if (chainId !== requiredChainIdHex){
-          setStatus('Wrong network (expected ' + requiredChainIdHex + '). Please switch network in wallet.');
-          // you may add wallet_addEthereumChain here if you want
-        }
-      }
-
-      // attach contracts: provider for read, signer for write
       tokenContractProvider = new ethers.Contract(tokenAddress, tokenAbi, provider);
       tokenContractSigner   = new ethers.Contract(tokenAddress, tokenAbi, signer);
 
-      // show token symbol
-      document.getElementById('sym').innerText = tokenSymbol;
+      symEl.innerText = tokenSymbol;
+      claimBtn.disabled = false;
 
-      // enable claim button
-      document.getElementById('claimBtn').disabled = false;
-
-      // initial balance fetch
       await updateBalance();
 
-      // listen Transfer events (read-only provider)
-      tokenContractProvider.on('Transfer', async (from, to, value) => {
-        log('Transfer event:', {from, to, value: value.toString()});
-        if (!userAddress) return;
+      tokenContractProvider.removeAllListeners("Transfer");
+      tokenContractProvider.on("Transfer", async (from, to, value) => {
         if (from.toLowerCase() === userAddress.toLowerCase() || to.toLowerCase() === userAddress.toLowerCase()){
           await updateBalance();
         }
       });
 
-      log('Connected and listening for Transfer events.');
     } catch (err){
       console.error(err);
       setStatus('Connect failed');
       log('Connect error:', err);
-      alert('Connect failed: ' + (err.message || err));
     }
   }
 
-  // Add token to wallet UI (metadata)
-  async function addTokenToWallet(){
-    if (!ethereum || !ethereum.request) return false;
-    try {
-      const wasAdded = await ethereum.request({
-        method: 'wallet_watchAsset',
-        params: {
-          type: 'ERC20',
-          options: {
-            address: tokenAddress,
-            symbol: tokenSymbol,
-            decimals: tokenDecimals,
-            image: tokenImage
-          },
-        },
-      });
-      log('wallet_watchAsset result:', wasAdded);
-      return wasAdded;
-    } catch (e){
-      log('wallet_watchAsset error:', e);
-      return false;
-    }
-  }
-
-  // Claim (mint) tokens
   async function claimDemoCoins(){
     try {
       if (!tokenContractSigner || !signer) {
@@ -183,56 +127,39 @@
         return;
       }
 
-      setStatus('Requesting to add token to wallet UI (optional)...');
-      await addTokenToWallet();
-
-      setStatus('Sending mint transaction — confirm in wallet...');
-      // attempt to call mint()
+      claimBtn.disabled = true;
+      setStatus('Sending mint transaction...');
       const tx = await tokenContractSigner.mint(userAddress, mintAmount);
       log('mint tx hash:', tx.hash);
-      setStatus('Mint tx sent, waiting confirmation...');
       await tx.wait();
       setStatus('Mint confirmed!');
-      log('Mint confirmed.');
-
       await updateBalance();
-      alert('✅ Minted ' + ethers.utils.formatUnits(mintAmount, tokenDecimals) + ' ' + tokenSymbol);
+      claimBtn.disabled = false;
+      alert('✅ Minted 5 ' + tokenSymbol);
     } catch (err) {
       console.error('Mint failed:', err);
       setStatus('Mint failed: ' + (err.message || err));
-      log('Mint error details:', err);
-      // common reason: mint is owner-only and your wallet is not owner
-      if (err && err.message && err.message.toLowerCase().includes('revert')){
-        alert('mint() reverted. Likely the connected account is not contract owner or mint is restricted.');
-      } else {
-        alert('Mint failed: ' + (err.message || err));
-      }
+      claimBtn.disabled = false;
     }
   }
 
-  // Read & display balance
   async function updateBalance(){
     try {
       if (!tokenContractProvider || !userAddress) return;
       const raw = await tokenContractProvider.balanceOf(userAddress);
       const human = Number(ethers.utils.formatUnits(raw, tokenDecimals));
-      document.getElementById('balance').innerText = human;
-      document.getElementById('value').innerText = (human * tokenPrice).toFixed(2);
+      balanceEl.innerText = human;
+      valueEl.innerText = (human * tokenPrice).toFixed(2);
       setStatus('Balance updated: ' + human + ' ' + tokenSymbol);
-      log('Balance read:', raw.toString(), '=>', human);
     } catch (e){
       log('Failed to fetch balance:', e);
     }
   }
 
-  // wire buttons
-  document.getElementById('connectBtn').addEventListener('click', connectWallet);
-  document.getElementById('claimBtn').addEventListener('click', claimDemoCoins);
+  connectBtn.addEventListener('click', connectWallet);
+  claimBtn.addEventListener('click', claimDemoCoins);
 
-  // initial
   setStatus('Ready — click Connect Wallet');
-  log('Page loaded. Ensure you open this page via http:// (not file://).');
-
   </script>
 </body>
 </html>
