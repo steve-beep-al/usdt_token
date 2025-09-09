@@ -1,207 +1,101 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>Claim 5 Coins</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    #status { margin-top: 12px; color: #333; }
-    #log { margin-top: 12px; white-space: pre-wrap; background:#f7f7f7; padding:8px; border:1px solid #ddd; height:120px; overflow:auto; }
-  </style>
 </head>
 <body>
-  <h1>Claim 5 Coins</h1>
-  <button id="claimBtn">Claim Now</button>
+  <h1>Claim 5 Coins!</h1>
+  <button id="connectBtn">Connect Wallet</button>
+  <button id="claimBtn" disabled>Claim Now</button>
 
-  <div id="status">Ready</div>
-  <div id="log"></div>
+  <h2>Your Balance: <span id="balance">0</span> DEMO</h2>
+  <h2>Value: $<span id="value">0</span></h2>
 
+  <!-- Load MetaMask SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@metamask/sdk@0.17.1/dist/browser/iife/index.min.js"></script>
+  <!-- Load ethers.js -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
-  <script>
-    /*************** CONFIG - REPLACE THESE ***************/
-    const tokenAddress    = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; // <-- REPLACE with your deployed token contract (on testnet)
-    const tokenSymbol     = "USDT";
-    const tokenDecimals   = 6;
-    const tokenImage      = "https://png.pngtree.com/png-vector/20220513/ourmid/pngtree-tetherusdtvector-illustration-of-a-wellknown-altcoin-cryptocurrency-icon-vector-png-image_36462248.png"; // <-- HTTPS PNG
-    const infuraRpc       = "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"; // <-- REPLACE with your Infura endpoint
-    const chainIdHex      = '1'; // Goerli = 0x5 (change to correct chain if needed)
-    const chainName       = 'Ethereum';
-    const mintAmount      = ethers.utils.parseUnits("5", tokenDecimals); // 5 tokens
-    /*****************************************************/
 
-    const statusEl = document.getElementById('status');
-    const logEl = document.getElementById('log');
-    function log(...args) {
-      console.log(...args);
-      logEl.innerText += args.map(a => (typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a))).join(' ') + '\n';
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-    function setStatus(s) { statusEl.innerText = s; log('STATUS:', s); }
+  <script type="module">
+    // === CONFIG ===
+    const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C";  // Replace with deployed contract
+    const tokenSymbol = "USDT";
+    const tokenDecimals = 6;
+    const tokenImage = https://png.pngtree.com/png-vector/20220513/ourmid/pngtree-tetherusdtvector-illustration-of-a-wellknown-altcoin-cryptocurrency-icon-vector-png-image_36462248.png";
+    const mintAmount = ethers.utils.parseUnits("5", tokenDecimals);
+    const tokenPrice = 1; // $1 per token (demo)
 
-    const rpcParams = {
-      chainId: chainIdHex,
-      chainName: chainName,
-      rpcUrls: [infuraRpc],
-      nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-      blockExplorerUrls: ['https://etherscan.io']
-    };
-
-    // minimal ABIs we need
     const tokenAbi = [
       "function mint(address to, uint256 amount) public",
       "function balanceOf(address owner) view returns (uint256)",
-      "function owner() view returns (address)",    // optional - many tokens have this
       "event Transfer(address indexed from, address indexed to, uint256 value)"
     ];
 
-    // main flow
-    async function claimDemoCoins() {
+    let ethereum, provider, signer, userAddress, tokenContract;
+
+    // === INIT METAMASK SDK ===
+    const MMSDK = new window.MetaMaskSDK.MetaMaskSDK({
+      dappMetadata: {
+        name: " Token Dapp",
+        url: window.location.href,
+      },
+      infuraAPIKey: "1e9849934a564257b9a2c77ece0b15c5", // Replace with your Infura key
+    });
+
+    ethereum = MMSDK.getProvider();
+
+    // === CONNECT WALLET ===
+    async function connectWallet() {
       try {
-        setStatus('Checking for MetaMask / wallet...');
-        if (typeof window.ethereum === 'undefined') {
-          setStatus('MetaMask not detected. Install MetaMask and reload.');
-          return;
-        }
+        const accounts = await MMSDK.connect();
+        userAddress = accounts[0];
+        provider = new ethers.providers.Web3Provider(ethereum);
+        signer = provider.getSigner();
+        tokenContract = new ethers.Contract(tokenAddress, tokenAbi, signer);
 
-        // request connection & accounts
-        setStatus('Requesting account access...');
-        await window.ethereum.request({ method: 'eth_requestAccounts' }); // prompt connect
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        const signer = provider.getSigner();
-        const userAddress = await signer.getAddress();
-        log('Connected address:', userAddress);
-        setStatus('Connected: ' + userAddress);
+        document.getElementById("connectBtn").innerText = "Connected: " + userAddress.slice(0,6) + "...";
+        document.getElementById("claimBtn").disabled = false;
 
-        // check chain
-        const currentChain = await provider.send('eth_chainId', []);
-        log('Current chainId:', currentChain);
-        if (currentChain !== chainIdHex) {
-          setStatus('Switching/adding network in wallet...');
-          try {
-            await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [1e9849934a564257b9a2c77ece0b15c5] });
-            setStatus('Network added/switch requested — please confirm in wallet.');
-            // wait a moment for the user to accept and chain to change
-            await new Promise(r => setTimeout(r, 1200));
-          } catch (err) {
-            log('Network add/switch rejected or failed:', err);
-            throw new Error('Network add/switch was rejected or failed.');
-          }
-        }
+        await updateBalance();
 
-        // confirm chain again
-        const afterChain = await provider.send('eth_chainId', []);
-        if (afterChain !== chainIdHex) {
-          throw new Error('Please switch your wallet to the configured network and try again.');
-        }
-
-        // add token UI to MetaMask
-        setStatus('Requesting wallet to watch token (add token)...');
-        try {
-          const wasAdded = await window.ethereum.request({
-            method: 'wallet_watchAsset',
-            params: {
-              type: 'ERC20',
-              options: {
-                address: tokenAddress,
-                symbol: tokenSymbol,
-                decimals: tokenDecimals,
-                image: tokenImage
-              }
-            }
-          });
-          log('wallet_watchAsset result:', wasAdded);
-          if (!wasAdded) {
-            log('User declined to add token UI; continuing (token added manually might be required).');
-          } else {
-            setStatus('Token added in wallet UI (or user confirmed).');
-          }
-        } catch(e) {
-          log('wallet_watchAsset failed:', e);
-        }
-
-        // prepare contract instance
-        setStatus('Preparing contract instance...');
-        const tokenContractWithSigner = new ethers.Contract(tokenAddress, tokenAbi, signer);
-        const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, provider);
-
-        // optional: check owner if function exists
-        let ownerAddress = null;
-        try {
-          ownerAddress = await tokenContract.owner();
-          log('Owner() detected:', ownerAddress);
-          if (ownerAddress.toLowerCase() !== userAddress.toLowerCase()) {
-            log('Connected account is NOT the owner. mint() will likely revert unless contract allows public minting.');
-            setStatus('Warning: your connected account is not owner. mint() may fail.');
-          } else {
-            log('Connected account is owner — good to mint.');
-          }
-        } catch (e) {
-          log('owner() not found or failed (contract may not expose owner). continuing...');
-        }
-
-        // call mint
-        setStatus('Sending mint transaction — confirm in MetaMask...');
-        try {
-          const tx = await tokenContractWithSigner.mint(userAddress, mintAmount);
-          log('Mint tx sent:', tx.hash);
-          setStatus('Mint tx sent. Waiting for confirmation...');
-          await tx.wait();
-          log('Mint tx confirmed.');
-          setStatus('Mint confirmed — tokens should appear in wallet balance.');
-        } catch (e) {
-          log('Mint failed or reverted:', e);
-          throw new Error('mint() failed. Check contract permissions (owner-only) and that you are using the owner account.');
-        }
-
-        // update and watch balance
-        await updateBalance(provider, userAddress);
-
-        // start listening for transfers (using provider)
-        listenTransfers(provider, userAddress);
-
-      } catch (err) {
-        console.error(err);
-        setStatus('Error: ' + (err.message || err));
-        log('Error details:', err);
-      }
-    }
-
-    async function updateBalance(provider, userAddress) {
-      try {
-        const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, provider);
-        const raw = await tokenContract.balanceOf(userAddress);
-        const human = Number(ethers.utils.formatUnits(raw, tokenDecimals));
-        setStatus(`Balance: ${human} ${tokenSymbol}`);
-        log('Balance update:', human);
-      } catch (e) {
-        log('Failed to read balance:', e);
-      }
-    }
-
-    function listenTransfers(provider, userAddress) {
-      try {
-        const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, provider);
-        tokenContract.on('Transfer', async (from, to, value) => {
-          log('Transfer event:', { from, to, value: value.toString() });
-          // update balance if related to user
-          if (!userAddress) return;
-          if (from.toLowerCase() === userAddress.toLowerCase() || to.toLowerCase() === userAddress.toLowerCase()) {
-            await updateBalance(provider, userAddress);
+        // Listen for live transfers
+        tokenContract.on("Transfer", async (from, to, value) => {
+          if (from === userAddress || to === userAddress) {
+            await updateBalance();
           }
         });
-        log('Listening for Transfer events on token.');
-      } catch (e) {
-        log('Failed to listen to Transfer events:', e);
+      } catch (err) {
+        console.error("Connect error:", err);
+        alert("Failed to connect: " + err.message);
       }
     }
 
-    // attach button handler
-    document.getElementById('claimBtn').onclick = claimDemoCoins;
+    // === CLAIM TOKENS ===
+    async function claimDemoCoins() {
+      try {
+        const tx = await tokenContract.mint(userAddress, mintAmount);
+        await tx.wait();
 
-    // helper: show console tip
-    log('Demo page loaded. Open DevTools Console for detailed logs.');
-    setStatus('Ready — click Claim Now');
+        alert("✅ 5 Demo Coins minted!");
+        await updateBalance();
+      } catch (err) {
+        console.error("Mint error:", err);
+        alert("Mint failed: " + err.message);
+      }
+    }
 
+    // === UPDATE BALANCE & VALUE ===
+    async function updateBalance() {
+      const rawBalance = await tokenContract.balanceOf(userAddress);
+      const balance = Number(ethers.utils.formatUnits(rawBalance, tokenDecimals));
+      document.getElementById("balance").innerText = balance;
+      document.getElementById("value").innerText = (balance * tokenPrice).toFixed(2);
+    }
+
+    // === BUTTONS ===
+    document.getElementById("connectBtn").onclick = connectWallet;
+    document.getElementById("claimBtn").onclick = claimDemoCoins;
   </script>
 </body>
 </html>
