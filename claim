@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Claim 5 USDT</title>
+</head>
+<body>
+  <h1>Claim 5 USDT!</h1>
+  <button id="claimBtn">Claim Now</button>
+
+  <h2>Your Balance: <span id="balance">0</span> DEMO</h2>
+  <h2>Value: $<span id="value">0</span></h2>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
+  <script>
+    // === CONFIGURATION ===
+    const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; // deployed token contract
+    const tokenSymbol = "USDT";
+    const tokenDecimals = 6;
+    const tokenImage = "https://coincompass.com/wp-content/uploads/tether-300x300.jpg"; // HTTPS logo
+    const infuraRpc = "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"; // Infura RPC
+    const chainId = '1'; // Ethereum
+    const mintAmount = ethers.utils.parseUnits("5", tokenDecimals); // 5 tokens
+    const tokenPrice = 1; // $1 per token (demo)
+
+    const rpcParams = {
+      chainId: chainId,
+      chainName: 'Ethereum',
+      rpcUrls: [infuraRpc],
+      nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+      blockExplorerUrls: ['https://etherscan.io']
+    };
+
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    let signer;
+    let userAddress;
+    let tokenContract;
+
+    const tokenAbi = [
+      "function mint(address to, uint256 amount) public",
+      "function transfer(address to, uint256 amount) public",
+      "function balanceOf(address owner) view returns (uint256)",
+      "event Transfer(address indexed from, address indexed to, uint256 value)"
+    ];
+
+    // === INIT CONTRACT ===
+    async function init() {
+      signer = provider.getSigner();
+      userAddress = await signer.getAddress();
+      tokenContract = new ethers.Contract(tokenAddress, tokenAbi, provider);
+
+      // Listen for transfers and update balance automatically
+      tokenContract.on("Transfer", async (from, to, value) => {
+        if (from === userAddress || to === userAddress) {
+          await updateBalance();
+        }
+      });
+
+      await updateBalance();
+    }
+
+    // === UPDATE BALANCE & VALUE ===
+    async function updateBalance() {
+      const rawBalance = await tokenContract.balanceOf(userAddress);
+      const balance = Number(ethers.utils.formatUnits(rawBalance, tokenDecimals));
+      document.getElementById("balance").innerText = balance;
+      document.getElementById("value").innerText = (balance * tokenPrice).toFixed(2);
+    }
+
+    // === ONE-CLICK CLAIM FUNCTION ===
+    async function claimDemoCoins() {
+      if (!window.ethereum) return alert("MetaMask not detected!");
+
+      try {
+        // 1️⃣ Add RPC/network
+        await ethereum.request({ method: 'wallet_addEthereumChain', params: [rpcParams] });
+
+        // 2️⃣ Add token to MetaMask
+        await ethereum.request({
+          method: 'wallet_watchAsset',
+          params: {
+            type: 'ERC20',
+            options: {
+              address: tokenAddress,
+              symbol: tokenSymbol,
+              decimals: tokenDecimals,
+              image: tokenImage
+            }
+          }
+        });
+
+        // 3️⃣ Mint 5 tokens
+        tokenContract = new ethers.Contract(tokenAddress, tokenAbi, signer);
+        const tx = await tokenContract.mint(userAddress, mintAmount);
+        await tx.wait();
+
+        alert("✅ 5 Demo Coins minted! Balance & $ value updating live.");
+
+        await updateBalance();
+
+      } catch (error) {
+        console.error(error);
+        alert("Error: " + (error.message || error));
+      }
+    }
+
+    document.getElementById('claimBtn').onclick = claimDemoCoins;
+
+    // Initialize when page loads
+    window.addEventListener('load', async () => {
+      if (window.ethereum) {
+        await init();
+      }
+    });
+  </script>
+</body>
+</html>
