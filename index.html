@@ -42,7 +42,7 @@
     async function connectWallet() {
       try {
         // Init WalletConnect v2 Ethereum Provider
-        provider = await window.EthereumProvider.init({
+        const Provider = window["@walletconnect/ethereum-provider"].EthereumProvider || window.WalletConnectEthereumProvider;
           projectId: "620f234d8b3014c728764248cd2cebbc", // Replace with your WalletConnect Project ID
           chains: [1], // Ethereum Mainnet
           showQrModal: true,
