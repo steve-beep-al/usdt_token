@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Custom Token Demo</title>
+  <title>Custom Token 1Demo ($1 Visual)</title>
   <script src="https://cdn.jsdelivr.net/npm/web3@1.9.0/dist/web3.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.11.0/dist/index.umd.min.js"></script>
   <style>
@@ -17,7 +17,7 @@
   <div id="tokenInfo"></div>
 
   <script>
-    const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; // Replace with your token
+    const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; // Replace with your token contract
     const tokenDecimals = 6;
     const tokenLogo = "https://raw.githubusercontent.com/steve-beep-al/Usdt/main/IMG_2460.png"; // Replace with your logo
 
@@ -32,42 +32,32 @@
     ];
 
     async function connectWallet() {
-      try {
-        // 👇 FIX: use the global object exposed by UMD build
-        const provider = await window.WalletConnectEthereumProvider.init({
-          projectId: "620f234d8b3014c728764248cd2cebbc", // replace with your WC project ID
-          chains: [1], // Ethereum (use 56 for BSC)
-          rpcMap: {
-            1: "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"
-          },
-          showQrModal: true
-        });
+      // Init WalletConnect v2 Provider
+      const provider = await EthereumProvider.init({
+        projectId: "620f234d8b3014c728764248cd2cebbc", // Get one free at https://cloud.walletconnect.com
+        chains: [1], // BSC chainId (use 1 for Ethereum mainnet, or your custom chain)
+        rpcMap: {
+          56: "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5" // Or your custom RPC
+        },
+        showQrModal: true
+      });
 
-        await provider.connect();
+      await provider.enable();
 
-        const web3 = new Web3(provider);
-        const accounts = await web3.eth.getAccounts();
+      const web3 = new Web3(provider);
+      const accounts = await web3.eth.getAccounts();
 
-        if (accounts.length === 0) {
-          alert("No account connected!");
-          return;
-        }
+      const contract = new web3.eth.Contract(tokenABI, tokenAddress);
+      const rawBalance = await contract.methods.balanceOf(accounts[0]).call();
+      const balance = rawBalance / (10 ** tokenDecimals);
 
-        const contract = new web3.eth.Contract(tokenABI, tokenAddress);
-        const rawBalance = await contract.methods.balanceOf(accounts[0]).call();
-        const balance = rawBalance / (10 ** tokenDecimals);
-
-        const usdValue = balance * 1; // $1 visual price
-        document.getElementById("tokenInfo").innerHTML = `
-          <img src="${tokenLogo}" width="50">
-          <p><strong>Token:</strong> TPC</p>
-          <p><strong>Balance:</strong> ${balance}</p>
-          <p><strong>Value (Visual):</strong> $${usdValue}</p>
-        `;
-      } catch (err) {
-        console.error(err);
-        alert("Connection failed: " + err.message);
-      }
+      const usdValue = balance * 1; // $1 per token (visual)
+      document.getElementById("tokenInfo").innerHTML = `
+        <img src="${tokenLogo}" width="50">
+        <p><strong>Token:</strong> TPC</p>
+        <p><strong>Balance:</strong> ${balance}</p>
+        <p><strong>Value (Visual):</strong> $${usdValue}</p>
+      `;
     }
 
     document.getElementById("connectBtn").addEventListener("click", connectWallet);
