@@ -1,42 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Custom Token- Demo (WalletConnect v2 robust)</title>
-
-  <!-- web3 -->
+  <meta charset="UTF-8">
+  <title>Custom 1Token Demo</title>
   <script src="https://cdn.jsdelivr.net/npm/web3@1.9.0/dist/web3.min.js"></script>
-
-  <!-- WalletConnect Ethereum Provider UMD (make sure this loads) -->
-  <script src="https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.21.8/dist/index.umd.min.js"></script>
-
+  <script src="https://unpkg.com/@walletconnect/ethereum-provider/dist/umd/index.min.js"></script>
   <style>
-    body { font-family: Arial, Helvetica, sans-serif; padding: 20px; }
+    body { font-family: Arial, sans-serif; padding: 20px; }
     #tokenInfo { margin-top: 20px; }
-    img { vertical-align: middle; margin-right: 10px; }
-    pre { background:#f6f6f6; padding:10px; border-radius:6px; }
+    img { vertical-align: middle; }
   </style>
 </head>
 <body>
-  <h2>Custom Token Demo (WalletConnect v2)</h2>
-
-  <p>
-    Click <strong>Connect Wallet & Show Token</strong>, scan with TrustWallet (or another WCv2 wallet).
-  </p>
-
+  <h1>Custom Token Demo ($1 Visual)</h1>
   <button id="connectBtn">Connect Wallet & Show Token</button>
   <div id="tokenInfo"></div>
-  <pre id="log"></pre>
 
   <script>
-    // ---------- CONFIGURE THESE ----------
-    const PROJECT_ID = "620f234d8b3014c728764248cd2cebbc"; // ← replace with your WalletConnect Cloud Project ID
-    const CHAIN_ID = 1; // 1 = Ethereum mainnet. Change to 56 for BSC or your custom chain id.
-    const RPC_URL = "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"; // ← replace with your RPC
-    const TOKEN_ADDRESS = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; // ← replace with your token contract
-    const TOKEN_DECIMALS = 6; // replace with correct decimals
-    const TOKEN_LOGO = "https://raw.githubusercontent.com/steve-beep-al/Usdt/main/IMG_2460.png";
-    // -------------------------------------
+    const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; 
+    const tokenDecimals = 6;
+    const tokenLogo = "https://raw.githubusercontent.com/steve-beep-al/Usdt/main/IMG_2460.png"; 
 
     const tokenABI = [
       {
@@ -48,113 +31,42 @@
       }
     ];
 
-    function log(msg) {
-      document.getElementById('log').textContent += msg + "\n";
-      console.debug(msg);
-    }
-
-    async function findProviderConstructor() {
-      // Try common globals and the names used in various builds
-      const lookup = [
-        // Common expectation (ESM import name when bundled to global)
-        () => (globalThis['@walletconnect/ethereum-provider'] && globalThis['@walletconnect/ethereum-provider'].EthereumProvider),
-        () => (globalThis['@walletconnect/ethereum-provider'] && globalThis['@walletconnect/ethereum-provider'].default),
-        () => globalThis.WalletConnectEthereumProvider,
-        () => globalThis.WalletConnectProvider,
-        () => globalThis.WalletConnect,
-        () => globalThis.WalletConnectModal,
-        () => globalThis['walletconnect'],
-        () => globalThis['WalletConnectProvider']
-      ];
-
-      for (const get of lookup) {
-        try {
-          const candidate = get();
-          if (!candidate) continue;
-          // candidate could be a function/class or an object with init
-          if (typeof candidate === 'function') return candidate;
-          if (candidate && typeof candidate.init === 'function') return candidate;
-          if (candidate && typeof candidate.EthereumProvider === 'function') return candidate.EthereumProvider;
-          if (candidate && typeof candidate.default === 'function') return candidate.default;
-        } catch (e) {
-          // ignore and try next
-        }
-      }
-      return null;
-    }
+    let provider;
 
     async function connectWallet() {
-      document.getElementById('tokenInfo').innerHTML = '';
-      document.getElementById('log').textContent = '';
-
-      try {
-        // 1) locate the provider constructor from the UMD bundle
-        const ProviderCtor = await findProviderConstructor();
-        if (!ProviderCtor) {
-          const msg = "WalletConnect provider UMD not found. Make sure you included the correct script:\n\n" +
-            "<script src=\"https://cdn.jsdelivr.net/npm/@walletconnect/ethereum-provider@2.21.8/dist/index.umd.min.js\"></script>\n\n" +
-            "Or use a bundler (npm install @walletconnect/ethereum-provider).";
-          log(msg);
-          alert("WalletConnect provider not loaded. See console/log for instructions.");
-          return;
+      // WalletConnect v3 EthereumProvider
+      provider = await window.WalletConnectEthereumProvider.init({
+        projectId: "620f234d8b3014c728764248cd2cebbc", // <-- get free at https://cloud.walletconnect.com
+        chains: [1], // Ethereum Mainnet
+        showQrModal: true,
+        rpcMap: {
+          1: "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"
         }
-        log("Found WalletConnect provider constructor.");
+      });
 
-        // 2) init provider (v2)
-        const provider = await ProviderCtor.init({
-          projectId: PROJECT_ID,
-          chains: [CHAIN_ID],
-          rpcMap: { [CHAIN_ID]: RPC_URL },
-          showQrModal: true, // UMD soft modal if supported; otherwise wallet will open via URI
-          metadata: {
-            name: "Demo DApp",
-            description: "Educational visual demo",
-            url: window.location.origin,
-            icons: []
-          }
-        });
+      await provider.enable();
+      const web3 = new Web3(provider);
+      const accounts = await web3.eth.getAccounts();
 
-        // 3) connect (this opens QR on desktop)
-        // use provider.connect() for v2 flow
-        await provider.connect();
-        log("Provider connected.");
-
-        // 4) create web3 and query accounts
-        const web3 = new Web3(provider);
-        const accounts = await web3.eth.getAccounts();
-        if (!accounts || accounts.length === 0) {
-          alert("No account returned by wallet.");
-          return;
-        }
-        const account = accounts[0];
-        log("Connected account: " + account);
-
-        // 5) read token balance
-        const contract = new web3.eth.Contract(tokenABI, TOKEN_ADDRESS);
-        const raw = await contract.methods.balanceOf(account).call();
-        const balance = Number(raw) / (10 ** TOKEN_DECIMALS);
-
-        // 6) show visual ($1 per token is front-end only)
-        const usdValue = (balance * 1).toLocaleString(undefined, {maximumFractionDigits:2});
-        document.getElementById('tokenInfo').innerHTML = `
-          <div style="display:flex;align-items:center;">
-            <img src="${TOKEN_LOGO}" width="56" height="56" alt="logo" onerror="this.style.display='none'">
-            <div style="margin-left:12px;">
-              <div><strong>Token:</strong> TPC</div>
-              <div><strong>Balance:</strong> ${balance}</div>
-              <div><strong>Value (visual):</strong> $${usdValue}</div>
-            </div>
-          </div>
-        `;
-      } catch (err) {
-        console.error(err);
-        const message = err && err.message ? err.message : String(err);
-        log("Connection failed: " + message);
-        alert("Connection failed: " + message);
+      if (accounts.length === 0) {
+        alert("No wallet connected!");
+        return;
       }
+
+      const contract = new web3.eth.Contract(tokenABI, tokenAddress);
+      const rawBalance = await contract.methods.balanceOf(accounts[0]).call();
+      const balance = rawBalance / (10 ** tokenDecimals);
+
+      const usdValue = balance * 1; // $1 visual price
+      document.getElementById("tokenInfo").innerHTML = `
+        <img src="${tokenLogo}" width="50">
+        <p><strong>Token:</strong> TPC</p>
+        <p><strong>Balance:</strong> ${balance}</p>
+        <p><strong>Value (Visual):</strong> $${usdValue}</p>
+      `;
     }
 
-    document.getElementById('connectBtn').addEventListener('click', connectWallet);
+    document.getElementById("connectBtn").addEventListener("click", connectWallet);
   </script>
 </body>
 </html>
