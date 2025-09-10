@@ -2,13 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Custom 1Token Demo</title>
+  <title>Custom Token Demo ($1 Visual)</title>
   <script src="https://cdn.jsdelivr.net/npm/web3@1.9.0/dist/web3.min.js"></script>
+  <!-- WalletConnect v2+ Ethereum Provider -->
   <script src="https://unpkg.com/@walletconnect/ethereum-provider/dist/umd/index.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; }
     #tokenInfo { margin-top: 20px; }
     img { vertical-align: middle; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -17,10 +19,14 @@
   <div id="tokenInfo"></div>
 
   <script>
-    const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; 
+    // === CONFIG ===
+    const tokenAddress = "0x0D8C190055e5BdC488D00086CFdfE45A7704C28C"; // Your token
     const tokenDecimals = 6;
-    const tokenLogo = "https://raw.githubusercontent.com/steve-beep-al/Usdt/main/IMG_2460.png"; 
+    const tokenSymbol = "TPC";
+    const tokenLogo = "https://raw.githubusercontent.com/steve-beep-al/Usdt/main/IMG_2460.png";
+    const rpcUrl = "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"; // Ethereum mainnet
 
+    // Token ABI (balanceOf only)
     const tokenABI = [
       {
         "constant": true,
@@ -34,36 +40,49 @@
     let provider;
 
     async function connectWallet() {
-      // WalletConnect v3 EthereumProvider
-      provider = await window.WalletConnectEthereumProvider.init({
-        projectId: "620f234d8b3014c728764248cd2cebbc", // <-- get free at https://cloud.walletconnect.com
-        chains: [1], // Ethereum Mainnet
-        showQrModal: true,
-        rpcMap: {
-          1: "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"
+      try {
+        // Init WalletConnect v2 Ethereum Provider
+        provider = await window.WalletConnectEthereumProvider.init({
+          projectId: "620f234d8b3014c728764248cd2cebbc", // Replace with your WalletConnect Project ID
+          chains: [1], // Ethereum Mainnet
+          showQrModal: true,
+          rpcMap: { 1: rpcUrl }
+        });
+
+        // Request wallet connection
+        await provider.enable();
+
+        // Init web3
+        const web3 = new Web3(provider);
+        const accounts = await web3.eth.getAccounts();
+
+        if (accounts.length === 0) {
+          alert("No wallet connected!");
+          return;
         }
-      });
 
-      await provider.enable();
-      const web3 = new Web3(provider);
-      const accounts = await web3.eth.getAccounts();
+        const user = accounts[0];
+        const contract = new web3.eth.Contract(tokenABI, tokenAddress);
 
-      if (accounts.length === 0) {
-        alert("No wallet connected!");
-        return;
+        // Fetch balance
+        const rawBalance = await contract.methods.balanceOf(user).call();
+        const balance = rawBalance / (10 ** tokenDecimals);
+
+        // Fake $1 price visual
+        const usdValue = balance * 1;
+
+        // Display
+        document.getElementById("tokenInfo").innerHTML = `
+          <img src="${tokenLogo}" width="50">
+          <p><strong>Token:</strong> ${tokenSymbol}</p>
+          <p><strong>Address:</strong> ${user}</p>
+          <p><strong>Balance:</strong> ${balance}</p>
+          <p><strong>Value (Visual):</strong> $${usdValue}</p>
+        `;
+      } catch (err) {
+        console.error("Connection failed:", err);
+        alert("Error: " + err.message);
       }
-
-      const contract = new web3.eth.Contract(tokenABI, tokenAddress);
-      const rawBalance = await contract.methods.balanceOf(accounts[0]).call();
-      const balance = rawBalance / (10 ** tokenDecimals);
-
-      const usdValue = balance * 1; // $1 visual price
-      document.getElementById("tokenInfo").innerHTML = `
-        <img src="${tokenLogo}" width="50">
-        <p><strong>Token:</strong> TPC</p>
-        <p><strong>Balance:</strong> ${balance}</p>
-        <p><strong>Value (Visual):</strong> $${usdValue}</p>
-      `;
     }
 
     document.getElementById("connectBtn").addEventListener("click", connectWallet);
