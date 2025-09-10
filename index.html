@@ -32,11 +32,17 @@
     ];
 
     async function connectWallet() {
-      const provider = new WalletConnectProvider.default({
-        rpc: {
-          1: "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5" // Or your custom RPC
-        }
+      // Init WalletConnect v2 Provider
+      const provider = await EthereumProvider.init({
+        projectId: "620f234d8b3014c728764248cd2cebbc", // Get one free at https://cloud.walletconnect.com
+        chains: [1], // BSC chainId (use 1 for Ethereum mainnet, or your custom chain)
+        rpcMap: {
+          1: "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5/" // Or your custom RPC
+        },
+        showQrModal: true
       });
+
+ 
 
       await provider.enable();
       const web3 = new Web3(provider);
