@@ -33,17 +33,16 @@
 
     async function connectWallet() {
       try {
-        // Init WalletConnect v2 Provider
-        const provider = await EthereumProvider.init({
-          projectId: "620f234d8b3014c728764248cd2cebbc", // replace with your real Project ID
-          chains: [1], // Ethereum Mainnet (use 56 for BSC)
+        // 👇 FIX: use the global object exposed by UMD build
+        const provider = await window.WalletConnectEthereumProvider.init({
+          projectId: "620f234d8b3014c728764248cd2cebbc", // replace with your WC project ID
+          chains: [1], // Ethereum (use 56 for BSC)
           rpcMap: {
-            1: "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5" // Ethereum RPC
+            1: "https://mainnet.infura.io/v3/1e9849934a564257b9a2c77ece0b15c5"
           },
           showQrModal: true
         });
 
-        // Connect wallet (v2 style)
         await provider.connect();
 
         const web3 = new Web3(provider);
